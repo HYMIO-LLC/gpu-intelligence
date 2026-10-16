@@ -1,0 +1,115 @@
+\documentclass[border=12pt]{standalone}
+
+\usepackage{tikz}
+\usetikzlibrary{
+  positioning,
+  arrows.meta,
+  fit,
+  backgrounds
+}
+
+\begin{document}
+
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  box/.style={
+    draw,
+    rounded corners,
+    minimum width=4cm,
+    minimum height=1.1cm,
+    align=center,
+    fill=blue!5
+  },
+  agent/.style={box, fill=green!8},
+  infra/.style={box, fill=orange!10},
+  future/.style={box, dashed, fill=gray!6, text=gray!70!black, minimum width=4.4cm, font=\sffamily\scriptsize},
+  arrow/.style={-{Stealth}, thick},
+  lbl/.style={font=\sffamily\scriptsize, fill=white, inner sep=1.5pt, align=center},
+  group/.style={
+    draw=gray!60,
+    rounded corners,
+    inner sep=10pt,
+    fill=gray!2
+  },
+  grouplabel/.style={font=\sffamily\scriptsize\bfseries, text=gray!70!black}
+]
+
+% ---------- Layer 1: Hymio platform ----------
+\node[future, minimum width=4cm] (dashboard) at (0, 0)
+  {Hymio Dashboard (Planned)\\React / TypeScript};
+\node[future, minimum width=4cm] (api) at (0, -1.9)
+  {Hymio API Server (Planned)\\Go (REST / gRPC, auth)};
+
+% ---------- Layer 2: cluster services & controllers ----------
+\node[box, fill=gray!12] (k8s) at (-6.3, -4.5)
+  {Kubernetes API Server\\{\scriptsize Nodes (conditions, taints)}\\{\scriptsize Pods / CRDs}};
+\node[box] (operator) at (0, -4.5)
+  {GPUHealthPolicy\\Controller\\Go / Kubebuilder\\{\scriptsize\color{gray!70!black} remediation: planned}};
+\node[box] (prom) at (5.6, -4.5)
+  {Prometheus\\Metrics TSDB};
+
+\node[future] (cost) at (-2.5, -6.6)
+  {Cost Attribution (Phase 2)\\reads Prometheus + K8s};
+\node[future] (scaler) at (2.5, -6.6)
+  {Inference Autoscaler (Phase 3)\\reads Prometheus, scales Pods};
+
+% ---------- Layer 3: GPU node data plane ----------
+\node[future, minimum width=4cm] (agent) at (-6.3, -9.2)
+  {Hymio Node Agent (Planned)\\DaemonSet: NVML / XID / kmsg};
+\node[infra] (workload) at (0, -9.2)
+  {AI Workloads\\vLLM Pods};
+\node[agent] (dcgm) at (5.6, -9.2)
+  {DCGM Exporter\\DaemonSet};
+\node[infra, minimum width=16.6cm] (driver) at (-0.7, -11.1)
+  {NVIDIA Driver \,/\, Container Toolkit \,/\, Device Plugin or DRA \,/\, GPU Hardware};
+
+% ---------- Existing health tools (outside Hymio) ----------
+\node[box, fill=gray!12, minimum width=3.4cm] (ext) at (-12.4, -4.5)
+  {Existing Health Tools\\{\scriptsize NVSentinel / NPD / EKS NMA}};
+
+% ---------- Group frames ----------
+\begin{scope}[on background layer]
+  \node[group, fit=(dashboard)(api),
+        label={[grouplabel, anchor=south west]north west:Hymio Platform (self-hosted or SaaS)}] {};
+  \node[group, fit=(k8s)(operator)(prom)(cost)(scaler),
+        label={[grouplabel, anchor=south west]north west:Cluster Services \& Controllers}] {};
+  \node[group, fit=(agent)(workload)(dcgm)(driver),
+        label={[grouplabel, anchor=south west]north west:GPU Node ($\times N$)}] {};
+\end{scope}
+
+% ---------- Arrows ----------
+% user-facing
+\draw[arrow, dashed, gray] (dashboard) -- node[lbl, right=2pt, text=gray!70!black] {HTTPS} (api);
+\draw[arrow, dashed, gray] (api.south west) -- node[lbl, pos=0.3, text=gray!70!black] {read status\\write policy CRs} (k8s.north);
+\draw[arrow, dashed, gray] (api.south east) -- node[lbl, pos=0.45, text=gray!70!black] {PromQL} (prom.north);
+
+% control loop
+\draw[arrow, {Stealth}-{Stealth}] ([yshift=0.3cm]operator.west) -- ([yshift=0.3cm]operator.west -| k8s.east)
+  node[midway, above=2pt, font=\sffamily\scriptsize, align=center] {watch /\\status update};
+\draw[arrow, dashed, gray] ([yshift=-0.35cm]operator.west) -- ([yshift=-0.35cm]operator.west -| k8s.east)
+  node[midway, below=2pt, font=\sffamily\scriptsize, align=center, text=gray!70!black] {Node condition\\(planned)};
+\draw[arrow] (operator.east) -- node[midway, above=3pt, font=\sffamily\scriptsize] {PromQL} (prom.west);
+
+% external tools -> node conditions (planned integration)
+\draw[arrow, dashed, gray] (ext.east) -- node[lbl, above=2pt, fill=none, text=gray!70!black] {Node conditions} node[lbl, below=2pt, fill=none, text=gray!70!black] {(planned)} (k8s.west);
+
+% node -> control plane
+\draw[arrow, dashed, gray] (agent.north) -- node[lbl, left=3pt, text=gray!70!black] {Node conditions\\(planned)} (k8s.south);
+\draw[arrow] (dcgm.north) -- node[lbl, right=3pt] {Prometheus scrapes\\DCGM metrics} (prom.south);
+
+% node internals
+\draw[arrow, dashed, gray] (agent.south) -- node[lbl, right=2pt, text=gray!70!black] {NVML} (agent.south |- driver.north);
+\draw[arrow] (dcgm.south) -- node[lbl, right=2pt] {NVML} (dcgm.south |- driver.north);
+\draw[arrow] (workload.south) -- node[lbl, right=2pt] {GPU} (workload.south |- driver.north);
+
+% ---------- Legend ----------
+\node[font=\sffamily\scriptsize, anchor=north west, align=left] at (-14.4, -12.1) {%
+  \tikz[baseline=-0.5ex]{\draw[thick,-{Stealth}] (0,0)--(0.6,0);}~Implemented \qquad
+  \tikz[baseline=-0.5ex]{\draw[thick,dashed,gray,-{Stealth}] (0,0)--(0.6,0);}~Planned \qquad
+  \tikz[baseline=-0.5ex]{\draw[dashed,rounded corners=1pt,fill=gray!6] (0,-0.12) rectangle (0.6,0.12);}~Planned component \qquad
+  \tikz[baseline=-0.5ex]{\draw[rounded corners=1pt,fill=gray!12] (0,-0.12) rectangle (0.6,0.12);}~Upstream / third-party
+};
+
+\end{tikzpicture}
+
+\end{document}
