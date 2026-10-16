@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - gpu.hymio.dev
+  resources:
+  - gpuhealthpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gpu.hymio.dev
+  resources:
+  - gpuhealthpolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - gpu.hymio.dev
+  resources:
+  - gpuhealthpolicies/status
+  verbs:
+  - get
+  - patch
+  - update

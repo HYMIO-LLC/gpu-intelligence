@@ -31,3 +31,11 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Kubernetes Operator build artifacts
+/operator/bin/
+/operator/build.log
+/operator/cover.out
+
+# macOS
+.DS_Store
