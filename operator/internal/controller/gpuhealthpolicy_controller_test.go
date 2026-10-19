@@ -19,15 +19,16 @@ package controller
 import (
 	"context"
 
+	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("GPUHealthPolicy Controller", func() {
@@ -43,45 +44,67 @@ var _ = Describe("GPUHealthPolicy Controller", func() {
 			Name:      resourceName,
 			Namespace: resourceNamespace,
 		}
-		gpuhealthpolicy := &gpuv1alpha1.GPUHealthPolicy{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind GPUHealthPolicy")
-			err := k8sClient.Get(ctx, typeNamespacedName, gpuhealthpolicy)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &gpuv1alpha1.GPUHealthPolicy{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: resourceNamespace,
+			By("creating a valid GPUHealthPolicy resource")
+
+			resource := &gpuv1alpha1.GPUHealthPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: resourceNamespace,
+				},
+				Spec: gpuv1alpha1.GPUHealthPolicySpec{
+					NodeSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"accelerator": "nvidia",
+						},
 					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+					MaxTemperatureCelsius: 85,
+					Action:                "AlertOnly",
+				},
 			}
+
+			err := k8sClient.Create(ctx, resource)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
+			By("cleaning up the GPUHealthPolicy resource")
+
 			resource := &gpuv1alpha1.GPUHealthPolicy{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+
+			err := k8sClient.Get(
+				ctx,
+				typeNamespacedName,
+				resource,
+			)
+
+			if apierrors.IsNotFound(err) {
+				return
+			}
+
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance GPUHealthPolicy")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			err = k8sClient.Delete(ctx, resource)
+			Expect(err).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
+
+		It("should reconcile a valid resource without error", func() {
+			By("reconciling the created GPUHealthPolicy")
+
 			controllerReconciler := &GPUHealthPolicyReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			_, err := controllerReconciler.Reconcile(
+				ctx,
+				reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			)
+
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
 	})
 })

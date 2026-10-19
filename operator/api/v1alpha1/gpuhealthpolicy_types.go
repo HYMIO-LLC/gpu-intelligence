@@ -21,38 +21,63 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// GPUHealthPolicySpec defines the desired state of GPUHealthPolicy
+// GPUHealthPolicySpec defines the desired configuration of a GPUHealthPolicy.
 type GPUHealthPolicySpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// NodeSelector identifies the Kubernetes Nodes to which this
+	// GPU health policy applies.
+	//
+	// An empty selector matches all Nodes. Users should specify
+	// appropriate labels to target GPU Nodes.
+	//
+	// +kubebuilder:validation:Required
+	NodeSelector metav1.LabelSelector `json:"nodeSelector"`
 
-	// foo is an example field of GPUHealthPolicy. Edit gpuhealthpolicy_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// MaxTemperatureCelsius defines the configured maximum GPU
+	// temperature threshold in degrees Celsius.
+	//
+	// This field is reserved for future GPU health evaluation.
+	// The current API does not perform temperature monitoring.
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=120
+	// +kubebuilder:validation:Required
+	MaxTemperatureCelsius int32 `json:"maxTemperatureCelsius"`
+
+	// Action specifies the configured policy action.
+	//
+	// In v0.1, only AlertOnly is supported.
+	// No automatic node remediation is performed.
+	//
+	// +kubebuilder:validation:Enum=AlertOnly
+	// +kubebuilder:validation:Required
+	Action string `json:"action"`
 }
 
-// GPUHealthPolicyStatus defines the observed state of GPUHealthPolicy.
+// GPUHealthPolicyStatus defines the observed state of a GPUHealthPolicy.
 type GPUHealthPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the GPUHealthPolicy resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	// ObservedGeneration is the most recent generation
+	// processed by the GPUHealthPolicy controller.
 	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
+	// It does not indicate that GPU health has been evaluated.
 	//
-	// The status of each condition is one of True, False, or Unknown.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// MatchedNodes is the number of Kubernetes Nodes matching
+	// the policy's node selector during the last reconciliation.
+	//
+	// It does not represent the number of healthy GPU Nodes.
+	//
+	// +optional
+	MatchedNodes int32 `json:"matchedNodes,omitempty"`
+
+	// Conditions represent the current processing state of
+	// the GPUHealthPolicy resource.
+	//
+	// A Ready condition indicates whether the policy has been
+	// accepted and processed by the controller.
+	// It does not indicate actual GPU health.
+	//
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,35 +87,40 @@ type GPUHealthPolicyStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// GPUHealthPolicy is the Schema for the gpuhealthpolicies API
+// GPUHealthPolicy is the Schema for the gpuhealthpolicies API.
 type GPUHealthPolicy struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// metadata is a standard object metadata
+	// Metadata contains standard Kubernetes resource metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of GPUHealthPolicy
+	// Spec defines the desired configuration of the GPUHealthPolicy.
 	// +required
 	Spec GPUHealthPolicySpec `json:"spec"`
 
-	// status defines the observed state of GPUHealthPolicy
+	// Status defines the observed state of the GPUHealthPolicy.
 	// +optional
 	Status GPUHealthPolicyStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
-// GPUHealthPolicyList contains a list of GPUHealthPolicy
+// GPUHealthPolicyList contains a list of GPUHealthPolicy resources.
 type GPUHealthPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []GPUHealthPolicy `json:"items"`
+
+	Items []GPUHealthPolicy `json:"items"`
 }
 
 func init() {
 	SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, &GPUHealthPolicy{}, &GPUHealthPolicyList{})
+		s.AddKnownTypes(
+			SchemeGroupVersion,
+			&GPUHealthPolicy{},
+			&GPUHealthPolicyList{},
+		)
 		return nil
 	})
 }
