@@ -19,15 +19,21 @@ package controller
 import (
 	"context"
 
+	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
+
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
 )
 
-// GPUHealthPolicyReconciler reconciles a GPUHealthPolicy object
+// GPUHealthPolicyReconciler reconciles a GPUHealthPolicy object.
 type GPUHealthPolicyReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -37,24 +43,68 @@ type GPUHealthPolicyReconciler struct {
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the GPUHealthPolicy object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+// Reconcile processes a GPUHealthPolicy and records that its configuration
+// has been accepted.
 //
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
-func (r *GPUHealthPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+// It does not inspect GPU health, query metrics, or modify Nodes.
+func (r *GPUHealthPolicyReconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		policy := &gpuv1alpha1.GPUHealthPolicy{}
+
+		if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		original := policy.DeepCopy()
+
+		policy.Status.ObservedGeneration = policy.Generation
+
+		meta.SetStatusCondition(
+			&policy.Status.Conditions,
+			metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				Reason:             "PolicyAccepted",
+				Message:            "GPUHealthPolicy configuration accepted; GPU health is not evaluated",
+				ObservedGeneration: policy.Generation,
+			},
+		)
+
+		// Avoid unnecessary API writes when nothing has changed.
+		if equality.Semantic.DeepEqual(original.Status, policy.Status) {
+			return nil
+		}
+
+		return r.Status().Patch(
+			ctx,
+			policy,
+			client.MergeFromWithOptions(
+				original,
+				client.MergeFromWithOptimisticLock{},
+			),
+		)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile GPUHealthPolicy",
+			"name", req.Name,
+			"namespace", req.Namespace,
+		)
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// SetupWithManager registers the GPUHealthPolicy controller.
 func (r *GPUHealthPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gpuv1alpha1.GPUHealthPolicy{}).
