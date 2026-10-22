@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -56,6 +57,7 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 	req ctrl.Request,
 ) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	policyFound := false
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		policy := &gpuv1alpha1.GPUHealthPolicy{}
@@ -84,6 +86,8 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 		); err != nil {
 			return err
 		}
+
+		policyFound = true
 
 		original := policy.DeepCopy()
 
@@ -124,7 +128,13 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	// Do not schedule periodic reconciliation for deleted policies.
+	if !policyFound {
+		return ctrl.Result{}, nil
+	}
+
+	// Periodically refresh matched Nodes even if no Policy event occurs.
+	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 }
 
 // SetupWithManager registers the GPUHealthPolicy controller.
