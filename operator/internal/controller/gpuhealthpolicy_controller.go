@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
+
 	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -43,6 +45,8 @@ type GPUHealthPolicyReconciler struct {
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/finalizers,verbs=update
 
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list
+
 // Reconcile processes a GPUHealthPolicy and records that its configuration
 // has been accepted.
 //
@@ -63,8 +67,27 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 			return err
 		}
 
+		// Convert the policy's Kubernetes LabelSelector.
+		selector, err := metav1.LabelSelectorAsSelector(
+			&policy.Spec.NodeSelector,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Query Nodes matching the label selector.
+		nodes := &corev1.NodeList{}
+		if err := r.List(
+			ctx,
+			nodes,
+			client.MatchingLabelsSelector{Selector: selector},
+		); err != nil {
+			return err
+		}
+
 		original := policy.DeepCopy()
 
+		policy.Status.MatchedNodes = int32(len(nodes.Items))
 		policy.Status.ObservedGeneration = policy.Generation
 
 		meta.SetStatusCondition(
