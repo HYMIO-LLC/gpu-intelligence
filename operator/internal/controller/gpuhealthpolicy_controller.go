@@ -46,7 +46,7 @@ type GPUHealthPolicyReconciler struct {
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
 // Reconcile processes a GPUHealthPolicy and records that its configuration
 // has been accepted.
