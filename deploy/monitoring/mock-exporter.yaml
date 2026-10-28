@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-dcgm-exporter
+  namespace: hymio-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-dcgm-exporter
+  template:
+    metadata:
+      labels:
+        app: mock-dcgm-exporter
+    spec:
+      containers:
+        - name: exporter
+          image: hymio-mock-dcgm-exporter:dev
+          imagePullPolicy: Never
+          ports:
+            - name: metrics
+              containerPort: 9400
+          env:
+            - name: MOCK_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MOCK_GPU_UUID
+              value: GPU-MOCK-001
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 200m
+              memory: 96Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-dcgm-exporter
+  namespace: hymio-monitoring
+spec:
+  selector:
+    app: mock-dcgm-exporter
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: metrics

@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hymio-prometheus-config
+  namespace: hymio-monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: mock-dcgm-exporter
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - mock-dcgm-exporter.hymio-monitoring.svc.cluster.local:9400
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hymio-prometheus
+  namespace: hymio-monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hymio-prometheus
+  template:
+    metadata:
+      labels:
+        app: hymio-prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.13.3
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=1d
+          ports:
+            - name: web
+              containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: hymio-prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hymio-prometheus
+  namespace: hymio-monitoring
+spec:
+  selector:
+    app: hymio-prometheus
+  ports:
+    - name: web
+      port: 9090
+      targetPort: web

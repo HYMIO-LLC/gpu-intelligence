@@ -1,0 +1,19 @@
+FROM golang:1.26.0 AS builder
+
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/mock-dcgm-exporter/ ./cmd/mock-dcgm-exporter/
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath -o /mock-dcgm-exporter \
+    ./cmd/mock-dcgm-exporter
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /mock-dcgm-exporter /mock-dcgm-exporter
+
+USER 65532:65532
+EXPOSE 9400
+
+ENTRYPOINT ["/mock-dcgm-exporter"]
