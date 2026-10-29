@@ -1,0 +1,44 @@
+apiVersion: gpu.hymio.dev/v1alpha1
+kind: GPUHealthPolicy
+metadata:
+  annotations:
+    hymio.dev/e2e-refresh: day4
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"gpu.hymio.dev/v1alpha1","kind":"GPUHealthPolicy","metadata":{"annotations":{},"name":"hymio-e2e","namespace":"default"},"spec":{"action":"AlertOnly","maxTemperatureCelsius":85,"nodeSelector":{"matchLabels":{"hymio.dev/e2e-gpu":"nvidia"}}}}
+  creationTimestamp: "2026-10-23T20:17:56Z"
+  generation: 1
+  name: hymio-e2e
+  namespace: default
+  resourceVersion: "96291"
+  uid: 31923119-48b5-4d20-a660-b5d7f2667516
+spec:
+  action: AlertOnly
+  maxTemperatureCelsius: 85
+  nodeSelector:
+    matchLabels:
+      hymio.dev/e2e-gpu: nvidia
+status:
+  conditions:
+  - lastTransitionTime: "2026-10-23T20:17:57Z"
+    message: GPUHealthPolicy configuration accepted; GPU health is reported separately
+      when telemetry is configured
+    observedGeneration: 1
+    reason: PolicyAccepted
+    status: "True"
+    type: Ready
+  - lastTransitionTime: "2026-10-29T23:12:53Z"
+    message: All 1 GPU(s) are within the temperature threshold; 0/1 Node(s) without
+      queryable GPU samples
+    observedGeneration: 1
+    reason: TemperatureWithinLimit
+    status: "True"
+    type: TelemetryAvailable
+  - lastTransitionTime: "2026-10-29T23:12:53Z"
+    message: All 1 GPU(s) are within the temperature threshold; 0/1 Node(s) without
+      queryable GPU samples
+    observedGeneration: 1
+    reason: TemperatureWithinLimit
+    status: "True"
+    type: GPUHealthy
+  matchedNodes: 1
+  observedGeneration: 1

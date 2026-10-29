@@ -37,6 +37,7 @@ import (
 
 	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
 	"github.com/HYMIO-LLC/gpu-intelligence/operator/internal/controller"
+	"github.com/HYMIO-LLC/gpu-intelligence/operator/internal/telemetry"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -183,8 +184,9 @@ func main() {
 	}
 
 	if err := (&controller.GPUHealthPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Telemetry: buildTelemetryClient(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpuhealthpolicy")
 		os.Exit(1)
@@ -205,4 +207,14 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// buildTelemetryClient enables GPU telemetry only when configured.
+// An empty URL preserves the original policy-only behavior.
+func buildTelemetryClient() telemetry.Client {
+	endpoint := os.Getenv("PROMETHEUS_URL")
+	if endpoint == "" {
+		return nil
+	}
+	return telemetry.NewPrometheusClient(endpoint)
 }

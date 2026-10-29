@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	gpuv1alpha1 "github.com/HYMIO-LLC/gpu-intelligence/operator/api/v1alpha1"
+	"github.com/HYMIO-LLC/gpu-intelligence/operator/internal/telemetry"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +40,9 @@ import (
 // GPUHealthPolicyReconciler reconciles a GPUHealthPolicy object.
 type GPUHealthPolicyReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	Telemetry telemetry.Client
+	Now       func() time.Time
 }
 
 // +kubebuilder:rbac:groups=gpu.hymio.dev,resources=gpuhealthpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -94,13 +97,41 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 		policy.Status.MatchedNodes = int32(len(nodes.Items))
 		policy.Status.ObservedGeneration = policy.Generation
 
+		if r.Telemetry != nil {
+			assessment := r.evaluatePolicyTelemetry(
+				ctx,
+				nodes.Items,
+				float64(policy.Spec.MaxTemperatureCelsius),
+			)
+			meta.SetStatusCondition(
+				&policy.Status.Conditions,
+				metav1.Condition{
+					Type:               "TelemetryAvailable",
+					Status:             assessment.Available,
+					Reason:             assessment.Reason,
+					Message:            assessment.Message,
+					ObservedGeneration: policy.Generation,
+				},
+			)
+			meta.SetStatusCondition(
+				&policy.Status.Conditions,
+				metav1.Condition{
+					Type:               "GPUHealthy",
+					Status:             assessment.Health,
+					Reason:             assessment.Reason,
+					Message:            assessment.Message,
+					ObservedGeneration: policy.Generation,
+				},
+			)
+		}
+
 		meta.SetStatusCondition(
 			&policy.Status.Conditions,
 			metav1.Condition{
 				Type:               "Ready",
 				Status:             metav1.ConditionTrue,
 				Reason:             "PolicyAccepted",
-				Message:            "GPUHealthPolicy configuration accepted; GPU health is not evaluated",
+				Message:            "GPUHealthPolicy configuration accepted; GPU health is reported separately when telemetry is configured",
 				ObservedGeneration: policy.Generation,
 			},
 		)
