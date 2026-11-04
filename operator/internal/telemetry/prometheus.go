@@ -14,8 +14,9 @@ import (
 )
 
 type PrometheusClient struct {
-	BaseURL string
-	HTTP    *http.Client
+	BaseURL      string
+	HTTP         *http.Client
+	FetchTimeout time.Duration
 }
 
 var _ Client = (*PrometheusClient)(nil)
@@ -26,6 +27,7 @@ func NewPrometheusClient(baseURL string) *PrometheusClient {
 		HTTP: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		FetchTimeout: 5 * time.Second,
 	}
 }
 
@@ -173,6 +175,16 @@ func (c *PrometheusClient) FetchNode(
 	if nodeName == "" {
 		return nil, fmt.Errorf("node name is required")
 	}
+
+	// All three sequential metric queries share one deadline.
+	// A zero-value client falls back to the default budget.
+	timeout := c.FetchTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	metrics := []struct {
 		name string

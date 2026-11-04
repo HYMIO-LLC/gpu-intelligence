@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -60,112 +61,162 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 	req ctrl.Request,
 ) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	policyFound := false
 
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		policy := &gpuv1alpha1.GPUHealthPolicy{}
+	// Load the policy before any external telemetry queries.
+	policy := &gpuv1alpha1.GPUHealthPolicy{}
+	if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
 
-		if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
-			if apierrors.IsNotFound(err) {
+	selector, err := metav1.LabelSelectorAsSelector(
+		&policy.Spec.NodeSelector,
+	)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	nodes := &corev1.NodeList{}
+	if err := r.List(
+		ctx,
+		nodes,
+		client.MatchingLabelsSelector{Selector: selector},
+	); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Perform network queries only once for this reconciliation.
+	var assessment *policyTelemetryResult
+
+	if r.Telemetry != nil {
+		result := r.evaluatePolicyTelemetry(
+			ctx,
+			nodes.Items,
+			float64(policy.Spec.MaxTemperatureCelsius),
+		)
+		assessment = &result
+	}
+
+	// A changed policy must be evaluated again using the new Spec.
+	errPolicyChanged := errors.New(
+		"GPUHealthPolicy changed during telemetry evaluation",
+	)
+
+	deleted := false
+
+	err = retry.RetryOnConflict(
+		retry.DefaultRetry,
+		func() error {
+			latest := &gpuv1alpha1.GPUHealthPolicy{}
+
+			if err := r.Get(
+				ctx,
+				req.NamespacedName,
+				latest,
+			); err != nil {
+				if apierrors.IsNotFound(err) {
+					deleted = true
+					return nil
+				}
+				return err
+			}
+
+			// Generation alone may not change in fake clients.
+			// Compare Spec as an additional safety check.
+			if latest.Generation != policy.Generation ||
+				!equality.Semantic.DeepEqual(
+					latest.Spec,
+					policy.Spec,
+				) {
+				return errPolicyChanged
+			}
+
+			original := latest.DeepCopy()
+
+			latest.Status.MatchedNodes = int32(len(nodes.Items))
+			latest.Status.ObservedGeneration = latest.Generation
+
+			if assessment != nil {
+				meta.SetStatusCondition(
+					&latest.Status.Conditions,
+					metav1.Condition{
+						Type:               "TelemetryAvailable",
+						Status:             assessment.Available,
+						Reason:             assessment.AvailableReason,
+						Message:            assessment.Message,
+						ObservedGeneration: latest.Generation,
+					},
+				)
+
+				meta.SetStatusCondition(
+					&latest.Status.Conditions,
+					metav1.Condition{
+						Type:               "GPUHealthy",
+						Status:             assessment.Health,
+						Reason:             assessment.HealthReason,
+						Message:            assessment.Message,
+						ObservedGeneration: latest.Generation,
+					},
+				)
+			}
+
+			meta.SetStatusCondition(
+				&latest.Status.Conditions,
+				metav1.Condition{
+					Type:               "Ready",
+					Status:             metav1.ConditionTrue,
+					Reason:             "PolicyAccepted",
+					Message:            "GPUHealthPolicy configuration accepted; GPU health is reported separately when telemetry is configured",
+					ObservedGeneration: latest.Generation,
+				},
+			)
+
+			if equality.Semantic.DeepEqual(
+				original.Status,
+				latest.Status,
+			) {
 				return nil
 			}
-			return err
-		}
 
-		// Convert the policy's Kubernetes LabelSelector.
-		selector, err := metav1.LabelSelectorAsSelector(
-			&policy.Spec.NodeSelector,
-		)
-		if err != nil {
-			return err
-		}
-
-		// Query Nodes matching the label selector.
-		nodes := &corev1.NodeList{}
-		if err := r.List(
-			ctx,
-			nodes,
-			client.MatchingLabelsSelector{Selector: selector},
-		); err != nil {
-			return err
-		}
-
-		policyFound = true
-
-		original := policy.DeepCopy()
-
-		policy.Status.MatchedNodes = int32(len(nodes.Items))
-		policy.Status.ObservedGeneration = policy.Generation
-
-		if r.Telemetry != nil {
-			assessment := r.evaluatePolicyTelemetry(
+			return r.Status().Patch(
 				ctx,
-				nodes.Items,
-				float64(policy.Spec.MaxTemperatureCelsius),
+				latest,
+				client.MergeFromWithOptions(
+					original,
+					client.MergeFromWithOptimisticLock{},
+				),
 			)
-			meta.SetStatusCondition(
-				&policy.Status.Conditions,
-				metav1.Condition{
-					Type:               "TelemetryAvailable",
-					Status:             assessment.Available,
-					Reason:             assessment.Reason,
-					Message:            assessment.Message,
-					ObservedGeneration: policy.Generation,
-				},
-			)
-			meta.SetStatusCondition(
-				&policy.Status.Conditions,
-				metav1.Condition{
-					Type:               "GPUHealthy",
-					Status:             assessment.Health,
-					Reason:             assessment.Reason,
-					Message:            assessment.Message,
-					ObservedGeneration: policy.Generation,
-				},
-			)
-		}
+		},
+	)
 
-		meta.SetStatusCondition(
-			&policy.Status.Conditions,
-			metav1.Condition{
-				Type:               "Ready",
-				Status:             metav1.ConditionTrue,
-				Reason:             "PolicyAccepted",
-				Message:            "GPUHealthPolicy configuration accepted; GPU health is reported separately when telemetry is configured",
-				ObservedGeneration: policy.Generation,
-			},
+	if errors.Is(err, errPolicyChanged) {
+		log.Info(
+			"Policy changed during evaluation; scheduling fresh reconciliation",
+			"name", req.Name,
+			"namespace", req.Namespace,
 		)
-
-		// Avoid unnecessary API writes when nothing has changed.
-		if equality.Semantic.DeepEqual(original.Status, policy.Status) {
-			return nil
-		}
-
-		return r.Status().Patch(
-			ctx,
-			policy,
-			client.MergeFromWithOptions(
-				original,
-				client.MergeFromWithOptimisticLock{},
-			),
-		)
-	})
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	if err != nil {
-		log.Error(err, "Failed to reconcile GPUHealthPolicy",
+		log.Error(
+			err,
+			"Failed to reconcile GPUHealthPolicy",
 			"name", req.Name,
 			"namespace", req.Namespace,
 		)
 		return ctrl.Result{}, err
 	}
 
-	// Do not schedule periodic reconciliation for deleted policies.
-	if !policyFound {
+	if deleted {
 		return ctrl.Result{}, nil
 	}
 
-	// Periodically refresh matched Nodes even if no Policy event occurs.
-	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+	return ctrl.Result{
+		RequeueAfter: 2 * time.Minute,
+	}, nil
 }
 
 // SetupWithManager registers the GPUHealthPolicy controller.

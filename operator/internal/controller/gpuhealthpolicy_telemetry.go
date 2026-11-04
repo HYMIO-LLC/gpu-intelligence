@@ -11,15 +11,16 @@ import (
 )
 
 type policyTelemetryResult struct {
-	Available metav1.ConditionStatus
-	Health    metav1.ConditionStatus
-	Reason    string
-	Message   string
+	Available       metav1.ConditionStatus
+	Health          metav1.ConditionStatus
+	AvailableReason string
+	HealthReason    string
+	Message         string
 }
 
 // evaluatePolicyTelemetry evaluates all matched Kubernetes Nodes.
-// A confirmed overtemperature reading takes precedence over unknown health.
-// Failed or empty Node queries never establish healthy status.
+// Confirmed overtemperature takes precedence over unknown health.
+// Missing or failed queries never establish healthy status.
 func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 	ctx context.Context,
 	nodes []corev1.Node,
@@ -27,10 +28,11 @@ func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 ) policyTelemetryResult {
 	if len(nodes) == 0 {
 		return policyTelemetryResult{
-			Available: metav1.ConditionFalse,
-			Health:    metav1.ConditionUnknown,
-			Reason:    "NoMatchedNodes",
-			Message:   "No Kubernetes Nodes match this policy",
+			Available:       metav1.ConditionFalse,
+			Health:          metav1.ConditionUnknown,
+			AvailableReason: "NoMatchedNodes",
+			HealthReason:    "NoMatchedNodes",
+			Message:         "No Kubernetes Nodes match this policy",
 		}
 	}
 
@@ -62,9 +64,10 @@ func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 		incompleteNodes == 0
 
 	result := policyTelemetryResult{
-		Available: metav1.ConditionFalse,
-		Health:    metav1.ConditionUnknown,
-		Reason:    evaluation.Reason,
+		Available:       metav1.ConditionFalse,
+		Health:          metav1.ConditionUnknown,
+		AvailableReason: "IncompleteTelemetry",
+		HealthReason:    evaluation.Reason,
 		Message: fmt.Sprintf(
 			"%s; %d/%d Node(s) without queryable GPU samples",
 			evaluation.Message,
@@ -75,20 +78,26 @@ func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 
 	if available {
 		result.Available = metav1.ConditionTrue
+		result.AvailableReason = "TelemetryAvailable"
+	} else if incompleteNodes > 0 {
+		result.AvailableReason = "IncompleteNodeTelemetry"
 	}
 
 	switch evaluation.Health {
 	case telemetry.HealthUnhealthy:
 		result.Health = metav1.ConditionFalse
+		result.HealthReason = "TemperatureExceeded"
+
 	case telemetry.HealthHealthy:
 		if available {
 			result.Health = metav1.ConditionTrue
+			result.HealthReason = "TemperatureWithinLimit"
 		}
 	}
 
 	if incompleteNodes > 0 &&
 		result.Health == metav1.ConditionUnknown {
-		result.Reason = "IncompleteNodeTelemetry"
+		result.HealthReason = "IncompleteNodeTelemetry"
 	}
 
 	return result
