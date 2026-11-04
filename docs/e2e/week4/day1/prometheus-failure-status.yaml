@@ -1,0 +1,44 @@
+apiVersion: gpu.hymio.dev/v1alpha1
+kind: GPUHealthPolicy
+metadata:
+  annotations:
+    hymio.dev/e2e-refresh: "1793776947"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"gpu.hymio.dev/v1alpha1","kind":"GPUHealthPolicy","metadata":{"annotations":{},"name":"hymio-week4-overheat","namespace":"default"},"spec":{"action":"AlertOnly","maxTemperatureCelsius":60,"nodeSelector":{"matchLabels":{"hymio.dev/e2e-gpu":"nvidia"}}}}
+  creationTimestamp: "2026-11-04T07:21:12Z"
+  generation: 1
+  name: hymio-week4-overheat
+  namespace: default
+  resourceVersion: "97919"
+  uid: 608bd578-c09c-4c51-9a34-6374650ce59d
+spec:
+  action: AlertOnly
+  maxTemperatureCelsius: 60
+  nodeSelector:
+    matchLabels:
+      hymio.dev/e2e-gpu: nvidia
+status:
+  conditions:
+  - lastTransitionTime: "2026-11-04T07:22:44Z"
+    message: No GPU temperature samples available; 1/1 Node(s) without queryable GPU
+      samples
+    observedGeneration: 1
+    reason: IncompleteNodeTelemetry
+    status: "False"
+    type: TelemetryAvailable
+  - lastTransitionTime: "2026-11-04T07:22:44Z"
+    message: No GPU temperature samples available; 1/1 Node(s) without queryable GPU
+      samples
+    observedGeneration: 1
+    reason: IncompleteNodeTelemetry
+    status: Unknown
+    type: GPUHealthy
+  - lastTransitionTime: "2026-11-04T07:21:12Z"
+    message: GPUHealthPolicy configuration accepted; GPU health is reported separately
+      when telemetry is configured
+    observedGeneration: 1
+    reason: PolicyAccepted
+    status: "True"
+    type: Ready
+  matchedNodes: 1
+  observedGeneration: 1

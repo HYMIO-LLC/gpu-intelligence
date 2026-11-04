@@ -1,0 +1,1 @@
+http://hymio-prometheus.hymio-monitoring.svc.cluster.local:9090

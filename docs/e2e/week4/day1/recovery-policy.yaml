@@ -1,0 +1,11 @@
+apiVersion: gpu.hymio.dev/v1alpha1
+kind: GPUHealthPolicy
+metadata:
+  name: hymio-week4-overheat
+  namespace: default
+spec:
+  nodeSelector:
+    matchLabels:
+      hymio.dev/e2e-gpu: nvidia
+  maxTemperatureCelsius: 85
+  action: AlertOnly
