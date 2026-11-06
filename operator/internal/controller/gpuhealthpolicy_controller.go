@@ -43,6 +43,7 @@ type GPUHealthPolicyReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	Telemetry telemetry.Client
+	Metrics   *PolicyMetrics
 	Now       func() time.Time
 }
 
@@ -66,6 +67,9 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 	policy := &gpuv1alpha1.GPUHealthPolicy{}
 	if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
 		if apierrors.IsNotFound(err) {
+			if r.Metrics != nil {
+				r.Metrics.Delete(req.Namespace, req.Name)
+			}
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -211,7 +215,14 @@ func (r *GPUHealthPolicyReconciler) Reconcile(
 	}
 
 	if deleted {
+		if r.Metrics != nil {
+			r.Metrics.Delete(req.Namespace, req.Name)
+		}
 		return ctrl.Result{}, nil
+	}
+
+	if err := r.publishPolicyMetrics(ctx, req.NamespacedName); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{

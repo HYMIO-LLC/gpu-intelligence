@@ -31,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -185,6 +186,7 @@ func main() {
 
 	if err := (&controller.GPUHealthPolicyReconciler{
 		Telemetry: buildTelemetryClient(),
+		Metrics:   controller.NewPolicyMetrics(metrics.Registry),
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
