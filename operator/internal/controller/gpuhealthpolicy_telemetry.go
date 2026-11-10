@@ -36,11 +36,6 @@ func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 		}
 	}
 
-	now := time.Now()
-	if r.Now != nil {
-		now = r.Now()
-	}
-
 	var allSamples []telemetry.Sample
 	incompleteNodes := 0
 
@@ -51,6 +46,13 @@ func (r *GPUHealthPolicyReconciler) evaluatePolicyTelemetry(
 			continue
 		}
 		allSamples = append(allSamples, samples...)
+	}
+
+	// Evaluate freshness after completing telemetry queries.
+	// Prometheus instant-query timestamps may be later than fetch start.
+	now := time.Now()
+	if r.Now != nil {
+		now = r.Now()
 	}
 
 	evaluation := telemetry.EvaluateTemperatures(
