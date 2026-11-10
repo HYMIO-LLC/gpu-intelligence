@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/gpu-health-alerts.yml
+
+alerting:
+  alertmanagers:
+    - scheme: http
+      static_configs:
+        - targets:
+            - hymio-alertmanager.hymio-monitoring.svc.cluster.local:9093
+
+scrape_configs:
+  - job_name: hymio-operator
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets:
+          - operator-controller-manager-metrics-service.operator-system.svc.cluster.local:8443

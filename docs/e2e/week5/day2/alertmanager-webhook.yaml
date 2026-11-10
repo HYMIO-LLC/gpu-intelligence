@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hymio-alertmanager-config
+  namespace: hymio-monitoring
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 1m
+
+    route:
+      receiver: hymio-webhook
+      group_by:
+        - alertname
+        - namespace
+        - policy
+      group_wait: 5s
+      group_interval: 15s
+      repeat_interval: 1h
+
+    receivers:
+      - name: hymio-webhook
+        webhook_configs:
+          - url: http://hymio-alert-receiver.hymio-monitoring.svc.cluster.local:8080/alerts
+            send_resolved: true
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hymio-alertmanager
+  namespace: hymio-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hymio-alertmanager
+  template:
+    metadata:
+      labels:
+        app: hymio-alertmanager
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.34.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+          ports:
+            - name: web
+              containerPort: 9093
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+      volumes:
+        - name: config
+          configMap:
+            name: hymio-alertmanager-config
+        - name: data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hymio-alertmanager
+  namespace: hymio-monitoring
+spec:
+  selector:
+    app: hymio-alertmanager
+  ports:
+    - name: web
+      port: 9093
+      targetPort: web
