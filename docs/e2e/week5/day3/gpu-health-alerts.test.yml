@@ -1,0 +1,51 @@
+rule_files:
+  - gpu-health-alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'up{job="hymio-operator",instance="operator:8443"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 90s
+        alertname: GPUOperatorMetricsDown
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'up{job="hymio-operator",instance="operator:8443"}'
+        values: '1 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: GPUOperatorMetricsDown
+        exp_alerts: []
+      - eval_time: 90s
+        alertname: GPUOperatorMetricsDown
+        exp_alerts:
+          - exp_labels:
+              job: hymio-operator
+              instance: operator:8443
+              severity: critical
+              component: gpu-health-operator
+            exp_annotations:
+              summary: "Hymio GPU Operator metrics endpoint is down"
+              description: "Prometheus cannot scrape the Hymio GPU Operator metrics endpoint."
+
+  - interval: 15s
+    input_series: []
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: GPUOperatorMetricsDown
+        exp_alerts: []
+      - eval_time: 90s
+        alertname: GPUOperatorMetricsDown
+        exp_alerts:
+          - exp_labels:
+              job: hymio-operator
+              severity: critical
+              component: gpu-health-operator
+            exp_annotations:
+              summary: "Hymio GPU Operator metrics endpoint is down"
+              description: "Prometheus cannot scrape the Hymio GPU Operator metrics endpoint."

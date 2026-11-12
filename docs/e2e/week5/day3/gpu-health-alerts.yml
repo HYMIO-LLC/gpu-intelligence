@@ -1,0 +1,33 @@
+groups:
+  - name: hymio-gpu-health
+    interval: 15s
+    rules:
+      - alert: GPUOverheating
+        expr: hymio_gpu_policy_healthy == 0
+        for: 30s
+        labels:
+          severity: warning
+          component: gpu-health-operator
+        annotations:
+          summary: "GPU health policy {{ $labels.policy }} is unhealthy"
+          description: "GPU health policy {{ $labels.namespace }}/{{ $labels.policy }} reports an unhealthy GPU state."
+
+      - alert: GPUTelemetryUnavailable
+        expr: hymio_gpu_policy_telemetry_available == 0
+        for: 1m
+        labels:
+          severity: warning
+          component: gpu-health-operator
+        annotations:
+          summary: "GPU telemetry unavailable for {{ $labels.policy }}"
+          description: "GPU telemetry is unavailable for policy {{ $labels.namespace }}/{{ $labels.policy }}."
+
+      - alert: GPUOperatorMetricsDown
+        expr: (up{job="hymio-operator"} == 0) or absent(up{job="hymio-operator"})
+        for: 1m
+        labels:
+          severity: critical
+          component: gpu-health-operator
+        annotations:
+          summary: "Hymio GPU Operator metrics endpoint is down"
+          description: "Prometheus cannot scrape the Hymio GPU Operator metrics endpoint."
