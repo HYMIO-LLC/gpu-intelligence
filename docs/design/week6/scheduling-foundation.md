@@ -37,7 +37,7 @@ Missing scheduling information:
 1. Receive a workload request.
 2. Read GPU candidate snapshots.
 3. Validate metric values and freshness.
-4. Fier unsuitable GPUs.
+4. Filter unsuitable GPUs.
 5. Score eligible GPUs.
 6. Select a deterministic winner.
 7. Return a decision and rejection reasons.
@@ -62,8 +62,8 @@ Initial scoring will use:
 Scores must be deterministic.
 Ties must have a stable ordering.
 
-Weights and normalization rules will be defined
-before implementation.
+Weights and normalization rules are defined in
+"Implementation — Week 6 Day 3" below.
 
 ## Scope Limitations
 
@@ -150,3 +150,99 @@ The engine returns recommendations only.
 
 It does not allocate GPU resources, reserve
 capacity, bind Pods, or mutate Kubernetes objects.
+
+## Implementation — Week 6 Day 2 (Filtering)
+
+Code: `operator/internal/scheduling/filter.go`.
+
+`Request.Validate()` enforces the request contract above.
+Errors wrap `ErrInvalidRequest`. The temperature limit range
+is `[1, 120]` °C, matching `GPUHealthPolicy`.
+
+`Filter(candidates, request, now)` returns `Eligible` and
+`Rejections`. Each rejected candidate gets exactly one reason:
+the first failed check, in this order.
+
+| # | Check | Reason |
+|---|---|---|
+| 1 | NodeName and GPUUUID are non-empty | `InvalidIdentity` |
+| 2 | (NodeName, GPUUUID) appears once | `DuplicateGPU` |
+| 3 | Temperature and utilization readings present | `MissingTelemetry` |
+| 4 | `telemetry.Sample.Validate()` passes | `InvalidTelemetry` |
+| 5 | No required reading has `ObservedAt` after `now` | `FutureTelemetry` |
+| 6 | No required reading is older than `MaxTelemetryAge` | `StaleTelemetry` |
+| 7 | Temperature <= `MaxTemperatureCelsius` | `TemperatureExceeded` |
+| 8 | Utilization <= `MaxUtilizationPercent` | `UtilizationExceeded` |
+
+Decisions:
+
+- Values equal to a limit pass. Age equal to
+  `MaxTelemetryAge` passes.
+- Duplicates: every copy of a repeated identity is
+  rejected. Conflicting snapshots cannot be trusted, and
+  picking one copy would depend on input order. The same
+  GPUUUID on different Nodes is treated as distinct.
+- Step 4 reuses `Sample.Validate()`, so an invalid optional
+  `MemoryUsedMiB` reading also rejects the candidate.
+  A missing memory reading does not.
+- `MemoryUsedMiB` is never interpreted as free capacity.
+- Empty input returns an empty result, not an error.
+- Both output slices are sorted by NodeName, then GPUUUID.
+  The input slice is not modified.
+
+## Implementation — Week 6 Day 3 (Scoring and Selection)
+
+Code: `operator/internal/scheduling/scoring.go`, `engine.go`.
+
+```
+score    = 0.7 × (100 − utilizationPercent)
+         + 0.3 × headroom
+headroom = clamp(100 × (maxTemp − temp) / maxTemp, 0, 100)
+```
+
+Both terms are clamped to `[0, 100]`, so a score is always
+finite and within `[0, 100]`. Higher is better.
+
+Example values with `MaxTemperatureCelsius = 80`:
+
+| Temp °C | Util % | Score |
+|---|---|---|
+| 0 | 0 | 100.000 |
+| 40 | 20 | 71.000 |
+| 45 | 30 | 62.125 |
+| 60 | 50 | 42.500 |
+| 65 | 60 | 33.625 |
+| 80 | 50 | 35.000 |
+| 80 | 100 | 0.000 |
+
+This is an initial heuristic, not a validated model of
+available compute.
+
+`DefaultEngine.Select()` runs Filter, scores the eligible
+candidates and keeps the highest score:
+
+- Scores are compared exactly, with no epsilon, which keeps
+  the ordering transitive. Equal scores are broken by
+  NodeName, then GPUUUID, ascending.
+- `Rejections` lists only candidates removed by Filter.
+  Eligible GPUs that lose on score are not listed.
+- An invalid request returns a zero `Decision` and an error.
+- The engine is stateless and safe for concurrent use.
+
+Reproducible demo scenarios live in
+`operator/internal/scheduling/example_test.go`:
+
+```sh
+cd operator
+go test ./internal/scheduling -run Example -v
+```
+
+## Verification — Week 6 Day 2/3
+
+```sh
+cd operator
+gofmt -l internal/scheduling                 # no output
+go test ./internal/scheduling -count=1 -cover   # 100% statements
+go test -race ./internal/scheduling -count=1
+make test                                    # full suite
+```
